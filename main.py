@@ -97,14 +97,42 @@ def app_main():
         col1, col2 = st.columns(2)
 
         with col1:
-            dias_min = st.number_input("Incubação mínima (dias)", min_value=0, step=1, value=0)
-            ovos_min = st.number_input("Ovos mínimo por ninhada", min_value=0, step=1, value=0)
-            fledging_min = st.number_input("Fledging mínimo (dias)", min_value=0, step=1, value=0)
+            dias_min = st.number_input(
+                "Incubação mínima (dias)",
+                min_value=0, step=1, value=0,
+                help="Tempo mínimo para o ovo chocar"
+            )
+
+            ovos_min = st.number_input(
+                "Ovos mínimo por ninhada",
+                min_value=0, step=1, value=0,
+                help="Quantidade mínima de ovos por reprodução"
+            )
+
+            fledging_min = st.number_input(
+                "Fledging mínimo (dias)",
+                min_value=0, step=1, value=0,
+                help="Tempo mínimo para o filhote sair do ninho"
+            )
 
         with col2:
-            dias_max = st.number_input("Incubação máxima (dias)", min_value=0, step=1, value=0)
-            ovos_max = st.number_input("Ovos máximo por ninhada", min_value=0, step=1, value=0)
-            fledging_max = st.number_input("Fledging máximo (dias)", min_value=0, step=1, value=0)
+            dias_max = st.number_input(
+                "Incubação máxima (dias)",
+                min_value=0, step=1, value=0,
+                help="Tempo máximo para o ovo chocar"
+            )
+
+            ovos_max = st.number_input(
+                "Ovos máximo por ninhada",
+                min_value=0, step=1, value=0,
+                help="Quantidade máxima de ovos por reprodução"
+            )
+
+            fledging_max = st.number_input(
+                "Fledging máximo (dias)",
+                min_value=0, step=1, value=0,
+                help="Tempo máximo para o filhote sair do ninho"
+            )
 
         # =========================
         # VALIDAÇÃO
@@ -135,9 +163,23 @@ def app_main():
         # =========================
         st.markdown("## 🌍 Características Gerais")
 
-        indice = st.number_input("Índice ecológico (ESI)", min_value=0, step=1, value=0)
-        habitats = st.number_input("Quantidade de habitats", min_value=0, step=1, value=0)
-        alimentos = st.number_input("Tipos de alimentos", min_value=0, step=1, value=0)
+        indice = st.number_input(
+            "Índice de especialização ecológica (ESI)",
+            min_value=0, step=1, value=0,
+            help="Indica o nível de dependência da espécie em relação a um habitat específico"
+        )
+
+        habitats = st.number_input(
+            "Quantidade de habitats",
+            min_value=0, step=1, value=0,
+            help="Número de ambientes diferentes onde a espécie vive"
+        )
+
+        alimentos = st.number_input(
+            "Tipos de alimentos",
+            min_value=0, step=1, value=0,
+            help="Diversidade alimentar da espécie"
+        )
 
         input_data["nr_esi_indice_especializacao_ecologica"] = indice
         input_data["qtd_habitats_principais"] = habitats
@@ -148,9 +190,23 @@ def app_main():
         # =========================
         st.markdown("## 📌 Classificações")
 
-        alcance = st.selectbox("Alcance restrito", ALCANCE_OPCOES)
-        reproducao = st.selectbox("Reprodução em ilhas", REPRO_OPCOES)
-        sexo = st.selectbox("Sexo depende da incubação", SEXO_OPCOES)
+        alcance = st.selectbox(
+            "Alcance restrito",
+            ALCANCE_OPCOES,
+            help="Indica se a espécie vive em uma área geográfica limitada"
+        )
+
+        reproducao = st.selectbox(
+            "Reprodução restrita a ilhas",
+            REPRO_OPCOES,
+            help="Indica se a reprodução ocorre exclusivamente em ilhas"
+        )
+
+        sexo = st.selectbox(
+            "Sexo dependente da incubação",
+            SEXO_OPCOES,
+            help="Indica se o sexo do filhote depende da temperatura de incubação"
+        )
 
         for opt in ALCANCE_OPCOES:
             col = f"tp_alcance_restrito_{normalize(opt)}"
@@ -172,7 +228,11 @@ def app_main():
         # =========================
         st.markdown("## 🌎 Região")
 
-        reino = st.selectbox("Reino Biogeográfico", REINO_OPCOES)
+        reino = st.selectbox(
+            "Reino biogeográfico",
+            REINO_OPCOES,
+            help="Região do mundo onde a espécie é encontrada"
+        )
 
         for opt in REINO_OPCOES:
             col = f"nm_reino_biogeografico_{normalize(opt)}"
@@ -184,7 +244,11 @@ def app_main():
         # =========================
         st.markdown("## 🥩 Dieta")
 
-        dieta = st.selectbox("Tipo de dieta", DIETA_OPCOES)
+        dieta = st.selectbox(
+            "Tipo de dieta",
+            DIETA_OPCOES,
+            help="Tipo principal de alimentação da espécie"
+        )
 
         for opt in DIETA_OPCOES:
             col = f"tp_dieta_portugues_{normalize(opt)}"

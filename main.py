@@ -1,105 +1,216 @@
 import streamlit as st
 import pandas as pd
 import pickle
-
-import re
 import os
+import unicodedata
 
+model_path = 'mdl-tp-categoria-conservacao-rf-top20.pkl'
 
-# Caminho para o seu modelo salvo no Google Drive
-model_path = 'mdl-tp-categoria-conservacao-lgbm.pkl'
+# ==============================
+# NORMALIZAÇÃO
+# ==============================
+def normalize(text):
+    text = text.lower()
+    text = unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode('ASCII')
+    text = text.replace(" ", "_").replace("-", "_")
+    text = "_".join(filter(None, text.split("_")))
+    return text
 
-# Função para limpar nomes de colunas, conforme usado no treinamento
-def clean_col_names(df):
-    cols = df.columns
-    new_cols = []
-    for col in cols:
-        new_col = re.sub(r'[^A-Za-z0-9_]+', '', str(col))
-        new_cols.append(new_col)
-    df.columns = new_cols
-    return df
+# ==============================
+# OPÇÕES
+# ==============================
+ALCANCE_OPCOES = ["SIM", "NÃO", "NÃO INFORMADO"]
+REPRO_OPCOES = ["SIM", "NÃO"]
+SEXO_OPCOES = ["FÊMEA", "MACHO", "NÃO INFORMADO"]
 
-# A lógica principal do Streamlit encapsulada em uma função
+REINO_OPCOES = [
+    "L - Neotropical",
+    "O - Oceania",
+    "I - Indomalaio",
+    "A - Afrotropical",
+    "P - Paleártico"
+]
+
+DIETA_OPCOES = [
+    "Frutas",
+    "Invertebrados",
+    "Vertebrados",
+    "Néctar",
+    "Sementes",
+    "Onívoro"
+]
+
+# ==============================
+# APP
+# ==============================
 def app_main():
-    st.title('Previsão da Categoria de Conservação de Aves')
-    st.write('Insira os parâmetros da ave abaixo para obter a previsão da sua categoria de conservação.')
+    st.set_page_config(page_title="BirdBase", layout="centered")
 
-    # Carregar o modelo
+    st.title("🐦 BirdBase - Classificação de Conservação")
+    st.write("Preencha os dados abaixo para prever a categoria de conservação da ave.")
+
     if not os.path.exists(model_path):
-        st.error(f"Erro: Modelo não encontrado em {model_path}. Por favor, verifique o caminho e execute as células anteriores para salvar o modelo.")
+        st.error("Modelo não encontrado.")
         return
 
-    try:
-        with open(model_path, 'rb') as model_pickle:
-            loaded_model = pickle.load(model_pickle)
-        st.success("Modelo carregado com sucesso!")
-    except Exception as e:
-        st.error(f"Erro ao carregar o modelo: {e}")
-        return
+    with open(model_path, "rb") as f:
+        model = pickle.load(f)
 
-    # Definição das 20 features principais e seus tipos/valores padrão
-    # Isso é crucial para criar os inputs corretos no Streamlit
-    features_info = {
-        'nr_esi_indice_especializacao_ecologica': {'type': 'number', 'default': 120, 'min_value': 0, 'max_value': 1000, 'help': 'Índice de especialização ecológica.'},
-        'nr_dias_incubacao_minima': {'type': 'number', 'default': 2000, 'min_value': 0, 'max_value': 5000, 'help': 'Número mínimo de dias de incubação.'},
-        'nr_ovos_maximo_por_ninhada': {'type': 'number', 'default': 500, 'min_value': 0, 'max_value': 1000, 'help': 'Número máximo de ovos por ninhada.'},
-        'nr_dias_periodo_fledging_minimo': {'type': 'number', 'default': 2000, 'min_value': 0, 'max_value': 5000, 'help': 'Número mínimo de dias no período de fledging.'},
-        'qtd_habitats_principais': {'type': 'number', 'default': 300, 'min_value': 0, 'max_value': 1000, 'help': 'Quantidade de habitats principais.'},
-        'qtd_tp_alimentos_principais_consumidos': {'type': 'number', 'default': 250, 'min_value': 0, 'max_value': 1000, 'help': 'Quantidade de tipos de alimentos principais consumidos.'},
-        'nr_dias_periodo_fledging_maximo': {'type': 'number', 'default': 2300, 'min_value': 0, 'max_value': 5000, 'help': 'Número máximo de dias no período de fledging.'},
-        'ds_ordem_Passarinhosemgeralpardaiscanriossabisetc': {'type': 'boolean', 'default': False, 'help': 'Pertence à ordem de Passarinhos em geral (pardais, canários, etc.).'},
-        'tp_alcance_restrito_NOINFORMADO': {'type': 'boolean', 'default': False, 'help': 'Informação sobre alcance restrito não disponível.'},
-        'tp_alcance_restrito_NO': {'type': 'boolean', 'default': True, 'help': 'Não possui alcance restrito.'},
-        'nr_ovos_minimo_por_ninhada': {'type': 'number', 'default': 300, 'min_value': 0, 'max_value': 1000, 'help': 'Número mínimo de ovos por ninhada.'},
-        'tp_reproducao_restrita_ilhas_NO': {'type': 'boolean', 'default': True, 'help': 'A reprodução não é restrita a ilhas.'},
-        'nr_dias_incubacao_maxima': {'type': 'number', 'default': 2100, 'min_value': 0, 'max_value': 5000, 'help': 'Número máximo de dias de incubação.'},
-        'nm_reino_biogeografico_LNeotropical': {'type': 'boolean', 'default': False, 'help': 'Reino biogeográfico Neotropical.'},
-        'nm_reino_biogeografico_AAustraliano': {'type': 'boolean', 'default': False, 'help': 'Reino biogeográfico Australiano.'},
-        'tp_sexo_incubacao_NOINFORMADO': {'type': 'boolean', 'default': True, 'help': 'Informação sobre sexo de incubação não disponível.'},
-        'nm_reino_biogeografico_IIndomalaio': {'type': 'boolean', 'default': False, 'help': 'Reino biogeográfico Indomalaio.'},
-        'tp_comportamento_criacao_cooperativa_NO': {'type': 'boolean', 'default': True, 'help': 'Não apresenta comportamento de criação cooperativa.'},
-        'tp_dieta_portugues_Invertebrados': {'type': 'boolean', 'default': False, 'help': 'Dieta principal é de Invertebrados.'},
-        'ds_habitat_principal_Florestaincluiflorestasecundriapntanotaigaetc': {'type': 'boolean', 'default': True, 'help': 'Habitat principal inclui floresta (secundária, pântano, taiga, etc.).'}
-    }
+    st.success("✅ Modelo carregado com sucesso!")
 
-    input_data = {}
-    st.subheader("Parâmetros da Ave:")
-    for feature, info in features_info.items():
-        display_name = feature.replace('_', ' ').title()
-        # Usando st.expander para organizar melhor os inputs
-        with st.expander(f"**{display_name}**", expanded=False):
-            if info['type'] == 'number':
-                input_data[feature] = st.number_input(
-                    f"Valor para {display_name}:",
-                    min_value=info.get('min_value'),
-                    max_value=info.get('max_value'),
-                    value=info.get('default'),
-                    help=info.get('help'),
-                    key=feature # Chave única para o widget
-                )
-            elif info['type'] == 'boolean':
-                # Convertendo True/False para 1/0 para features one-hot encoded
-                input_data[feature] = int(st.checkbox(
-                    f"Marque se a característica '{display_name}' se aplica (1=Sim):",
-                    value=info.get('default'),
-                    help=info.get('help'),
-                    key=feature
-                ))
+    # ==============================
+    # POPUP
+    # ==============================
+    if "mostrar_info" not in st.session_state:
+        st.session_state.mostrar_info = True
 
-    if st.button('Prever Categoria de Conservação', help='Clique para fazer a previsão com os parâmetros inseridos.'):
-        # Criar DataFrame com os novos dados
-        new_data_for_prediction = pd.DataFrame([input_data])
+    if st.session_state.mostrar_info:
+        with st.expander("ℹ️ Sobre o projeto", expanded=True):
+            st.write("""
+            Este sistema utiliza um modelo de Machine Learning para prever a categoria de conservação de aves.
 
-        # Limpar os nomes das colunas para corresponder ao treinamento do modelo
-        new_data_for_prediction = clean_col_names(new_data_for_prediction.copy())
+            Você pode inserir informações como:
+            - Tempo de incubação
+            - Número de ovos
+            - Tipo de dieta
+            - Região geográfica
 
-        # Fazer a predição
+            ⚠️ Importante:
+            Nem todas as opções disponíveis influenciam o modelo, pois ele foi treinado com um subconjunto de variáveis.
+
+            💡 Algumas entradas podem não impactar diretamente o resultado.
+            """)
+
+            if st.button("Fechar"):
+                st.session_state.mostrar_info = False
+
+    features = model.feature_names_in_.tolist()
+    input_data = {f: 0 for f in features}
+
+    with st.form("formulario"):
+
+        # =========================
+        # INCUBAÇÃO
+        # =========================
+        st.markdown("## 📊 Incubação e Reprodução")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            dias_min = st.number_input("Incubação mínima (dias)", min_value=0, step=1, value=0)
+            ovos_min = st.number_input("Ovos mínimo por ninhada", min_value=0, step=1, value=0)
+            fledging_min = st.number_input("Fledging mínimo (dias)", min_value=0, step=1, value=0)
+
+        with col2:
+            dias_max = st.number_input("Incubação máxima (dias)", min_value=0, step=1, value=0)
+            ovos_max = st.number_input("Ovos máximo por ninhada", min_value=0, step=1, value=0)
+            fledging_max = st.number_input("Fledging máximo (dias)", min_value=0, step=1, value=0)
+
+        # =========================
+        # VALIDAÇÃO
+        # =========================
+        erro = False
+
+        if dias_min > dias_max:
+            st.error("Incubação mínima não pode ser maior que a máxima.")
+            erro = True
+
+        if ovos_min > ovos_max:
+            st.error("Ovos mínimo não pode ser maior que o máximo.")
+            erro = True
+
+        if fledging_min > fledging_max:
+            st.error("Fledging mínimo não pode ser maior que o máximo.")
+            erro = True
+
+        input_data["nr_dias_incubacao_minima"] = dias_min
+        input_data["nr_dias_incubacao_maxima"] = dias_max
+        input_data["nr_ovos_minimo_por_ninhada"] = ovos_min
+        input_data["nr_ovos_maximo_por_ninhada"] = ovos_max
+        input_data["nr_dias_periodo_fledging_minimo"] = fledging_min
+        input_data["nr_dias_periodo_fledging_maximo"] = fledging_max
+
+        # =========================
+        # CARACTERÍSTICAS
+        # =========================
+        st.markdown("## 🌍 Características Gerais")
+
+        indice = st.number_input("Índice ecológico (ESI)", min_value=0, step=1, value=0)
+        habitats = st.number_input("Quantidade de habitats", min_value=0, step=1, value=0)
+        alimentos = st.number_input("Tipos de alimentos", min_value=0, step=1, value=0)
+
+        input_data["nr_esi_indice_especializacao_ecologica"] = indice
+        input_data["qtd_habitats_principais"] = habitats
+        input_data["qtd_tp_alimentos_principais_consumidos"] = alimentos
+
+        # =========================
+        # CLASSIFICAÇÕES
+        # =========================
+        st.markdown("## 📌 Classificações")
+
+        alcance = st.selectbox("Alcance restrito", ALCANCE_OPCOES)
+        reproducao = st.selectbox("Reprodução em ilhas", REPRO_OPCOES)
+        sexo = st.selectbox("Sexo depende da incubação", SEXO_OPCOES)
+
+        for opt in ALCANCE_OPCOES:
+            col = f"tp_alcance_restrito_{normalize(opt)}"
+            if col in input_data:
+                input_data[col] = 1 if opt == alcance else 0
+
+        for opt in REPRO_OPCOES:
+            col = f"tp_reproducao_restrita_ilhas_{normalize(opt)}"
+            if col in input_data:
+                input_data[col] = 1 if opt == reproducao else 0
+
+        for opt in SEXO_OPCOES:
+            col = f"tp_sexo_incubacao_{normalize(opt)}"
+            if col in input_data:
+                input_data[col] = 1 if opt == sexo else 0
+
+        # =========================
+        # REGIÃO
+        # =========================
+        st.markdown("## 🌎 Região")
+
+        reino = st.selectbox("Reino Biogeográfico", REINO_OPCOES)
+
+        for opt in REINO_OPCOES:
+            col = f"nm_reino_biogeografico_{normalize(opt)}"
+            if col in input_data:
+                input_data[col] = 1 if opt == reino else 0
+
+        # =========================
+        # DIETA
+        # =========================
+        st.markdown("## 🥩 Dieta")
+
+        dieta = st.selectbox("Tipo de dieta", DIETA_OPCOES)
+
+        for opt in DIETA_OPCOES:
+            col = f"tp_dieta_portugues_{normalize(opt)}"
+            if col in input_data:
+                input_data[col] = 1 if opt == dieta else 0
+
+        submitted = st.form_submit_button("🔍 Classificar")
+
+    # =========================
+    # RESULTADO
+    # =========================
+    if submitted and not erro:
+        df = pd.DataFrame([input_data])
+        df = df[features]
+
+        pred = model.predict(df)
+
+        st.success(f"### 🧠 Categoria prevista: **{pred[0]}**")
+
         try:
-            sample_prediction = loaded_model.predict(new_data_for_prediction)
-            st.success(f"### A categoria de conservação prevista é: **{sample_prediction[0]}**")
-        except Exception as e:
-            st.error(f"Erro ao fazer a previsão: {e}\nVerifique se todos os parâmetros foram inseridos corretamente.")
+            proba = model.predict_proba(df)
+            conf = round(max(proba[0]) * 100, 2)
+            st.info(f"Confiança: {conf}%")
+        except:
+            pass
 
-# Executar o aplicativo Streamlit diretamente no Colab
-# st.run_headless() permite que o Streamlit seja renderizado no output da célula
-st.run_headless(app_main)
+
+if __name__ == "__main__":
+    app_main()

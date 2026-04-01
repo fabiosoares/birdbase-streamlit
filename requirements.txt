@@ -1,3 +1,6 @@
 streamlit
 pandas
 scikit-learn
+google-cloud-bigquery
+google-auth
+pyarrow

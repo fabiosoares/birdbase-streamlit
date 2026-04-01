@@ -1,280 +1,198 @@
 import streamlit as st
 import pandas as pd
 import pickle
-import os
+from google.cloud import bigquery
 import unicodedata
 
-model_path = 'mdl-tp-categoria-conservacao-rf-top20.pkl'
+MODEL_PATH = 'mdl-tp-categoria-conservacao-rf-top20.pkl'
+TABLE_FAT = 'mackenzie-engenharia-dados.birdbase_gold.fat_aves_detalhadas'
 
-# ==============================
-# NORMALIZAÇÃO
-# ==============================
+# ================= UTILS =================
+
 def normalize(text):
-    text = text.lower()
+    text = str(text).lower().strip()
     text = unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode('ASCII')
-    text = text.replace(" ", "_").replace("-", "_")
-    text = "_".join(filter(None, text.split("_")))
-    return text
+    return text.replace(" ", "_")
 
-# ==============================
-# OPÇÕES
-# ==============================
-ALCANCE_OPCOES = ["SIM", "NÃO", "NÃO INFORMADO"]
-REPRO_OPCOES = ["SIM", "NÃO"]
-SEXO_OPCOES = ["FÊMEA", "MACHO", "NÃO INFORMADO"]
+@st.cache_resource
+def load_model():
+    with open(MODEL_PATH, 'rb') as f:
+        return pickle.load(f)
 
-REINO_OPCOES = [
-    "L - Neotropical",
-    "O - Oceania",
-    "I - Indomalaio",
-    "A - Afrotropical",
-    "P - Paleártico"
-]
+@st.cache_resource
+def get_client():
+    return bigquery.Client()
 
-DIETA_OPCOES = [
-    "Frutas",
-    "Invertebrados",
-    "Vertebrados",
-    "Néctar",
-    "Sementes",
-    "Onívoro"
-]
+@st.cache_data
+def load_gold():
+    client = get_client()
+    return client.query(f"SELECT * FROM `{TABLE_FAT}`").to_dataframe()
 
-# ==============================
-# APP
-# ==============================
-def app_main():
-    st.set_page_config(page_title="BirdBase", layout="centered")
+# ================= MAIN =================
+
+def main():
+    st.set_page_config(layout="centered")
 
     st.title("🐦 BirdBase - Classificação de Conservação")
     st.write("Preencha os dados abaixo para prever a categoria de conservação da ave.")
 
-    if not os.path.exists(model_path):
-        st.error("Modelo não encontrado.")
-        return
-
-    with open(model_path, "rb") as f:
-        model = pickle.load(f)
-
-    st.success("✅ Modelo carregado com sucesso!")
-
-    # ==============================
-    # POPUP
-    # ==============================
-    if "mostrar_info" not in st.session_state:
-        st.session_state.mostrar_info = True
-
-    if st.session_state.mostrar_info:
-        with st.expander("ℹ️ Sobre o projeto", expanded=True):
-            st.write("""
-            Este sistema utiliza um modelo de Machine Learning para prever a categoria de conservação de aves.
-
-            Você pode inserir informações como:
-            - Tempo de incubação
-            - Número de ovos
-            - Tipo de dieta
-            - Região geográfica
-
-            ⚠️ Importante:
-            Nem todas as opções disponíveis influenciam o modelo, pois ele foi treinado com um subconjunto de variáveis.
-
-            💡 Algumas entradas podem não impactar diretamente o resultado.
-            """)
-
-            if st.button("Fechar"):
-                st.session_state.mostrar_info = False
-
+    model = load_model()
     features = model.feature_names_in_.tolist()
-    input_data = {f: 0 for f in features}
+    df = load_gold()
 
-    with st.form("formulario"):
+    st.success("Modelo carregado com sucesso!")
 
-        # =========================
-        # INCUBAÇÃO
-        # =========================
-        st.markdown("## 📊 Incubação e Reprodução")
+    # ================= INPUT (IGUAL AO SEU LAYOUT) =================
+    st.markdown("## 📊 Incubação e Reprodução")
 
-        col1, col2 = st.columns(2)
+    col1, col2 = st.columns(2)
 
-        with col1:
-            dias_min = st.number_input(
-                "Incubação mínima (dias)",
-                min_value=0, step=1, value=0,
-                help="Tempo mínimo para o ovo chocar"
-            )
+    with col1:
+        inc_min = st.number_input("Dias de incubação (mín)", 0, 100, 0,
+                                  help="Menor tempo de incubação")
+        ovos_min = st.number_input("Ovos mínimo por ninhada", 0, 20, 0)
+        fled_min = st.number_input("Fledging mínimo", 0, 100, 0)
 
-            ovos_min = st.number_input(
-                "Ovos mínimo por ninhada",
-                min_value=0, step=1, value=0,
-                help="Quantidade mínima de ovos por reprodução"
-            )
+    with col2:
+        inc_max = st.number_input("Dias de incubação (máx)", 0, 100, 0)
+        ovos_max = st.number_input("Ovos máximo por ninhada", 0, 20, 0)
+        fled_max = st.number_input("Fledging máximo", 0, 100, 0)
 
-            fledging_min = st.number_input(
-                "Fledging mínimo (dias)",
-                min_value=0, step=1, value=0,
-                help="Tempo mínimo para o filhote sair do ninho"
-            )
+    st.markdown("## 🌍 Características Gerais")
 
-        with col2:
-            dias_max = st.number_input(
-                "Incubação máxima (dias)",
-                min_value=0, step=1, value=0,
-                help="Tempo máximo para o ovo chocar"
-            )
+    esi = st.slider("Índice ecológico", 0, 100, 5,
+                    help="Quanto maior, mais especializada a espécie")
 
-            ovos_max = st.number_input(
-                "Ovos máximo por ninhada",
-                min_value=0, step=1, value=0,
-                help="Quantidade máxima de ovos por reprodução"
-            )
+    habitats = st.slider("Qtd habitats", 0, 10, 3,
+                         help="Número de ambientes onde vive")
 
-            fledging_max = st.number_input(
-                "Fledging máximo (dias)",
-                min_value=0, step=1, value=0,
-                help="Tempo máximo para o filhote sair do ninho"
-            )
+    alimentos = st.slider("Tipos de alimentos", 0, 10, 5,
+                          help="Diversidade alimentar")
 
-        # =========================
-        # VALIDAÇÃO
-        # =========================
-        erro = False
+    alcance = st.selectbox("Alcance restrito",
+                           ["SIM", "NÃO", "NÃO INFORMADO"],
+                           help="Se vive em área limitada")
 
-        if dias_min > dias_max:
-            st.error("Incubação mínima não pode ser maior que a máxima.")
-            erro = True
+    ilhas = st.selectbox("Reprodução restrita a ilhas",
+                         ["SIM", "NÃO", "NÃO INFORMADO"])
 
-        if ovos_min > ovos_max:
-            st.error("Ovos mínimo não pode ser maior que o máximo.")
-            erro = True
+    sexo = st.selectbox("Sexo depende da incubação",
+                        ["SIM", "NÃO", "NÃO INFORMADO"])
 
-        if fledging_min > fledging_max:
-            st.error("Fledging mínimo não pode ser maior que o máximo.")
-            erro = True
+    st.markdown("## 🌎 Região")
+    reino = st.selectbox("Reino Biogeográfico",
+                         sorted(df['nm_reino_biogeografico'].dropna().unique()))
 
-        input_data["nr_dias_incubacao_minima"] = dias_min
-        input_data["nr_dias_incubacao_maxima"] = dias_max
-        input_data["nr_ovos_minimo_por_ninhada"] = ovos_min
-        input_data["nr_ovos_maximo_por_ninhada"] = ovos_max
-        input_data["nr_dias_periodo_fledging_minimo"] = fledging_min
-        input_data["nr_dias_periodo_fledging_maximo"] = fledging_max
+    st.markdown("## 🍖 Dieta e Comportamento")
+    dieta = st.selectbox("Dieta",
+                         sorted(df['tp_dieta_portugues'].dropna().unique()))
 
-        # =========================
-        # CARACTERÍSTICAS
-        # =========================
-        st.markdown("## 🌍 Características Gerais")
+    # ================= BOTÃO =================
+    if st.button("🔎 Classificar"):
 
-        indice = st.number_input(
-            "Índice de especialização ecológica (ESI)",
-            min_value=0, step=1, value=0,
-            help="Indica o nível de dependência da espécie em relação a um habitat específico"
+        input_data = {f: 0 for f in features}
+
+        # numéricas
+        for col in input_data:
+            if 'esi' in col:
+                input_data[col] = esi
+            if 'habitat' in col and 'qtd' in col:
+                input_data[col] = habitats
+            if 'alimentos' in col:
+                input_data[col] = alimentos
+
+        # categóricas
+        for f in features:
+            f_norm = normalize(f)
+
+            if normalize(reino) in f_norm:
+                input_data[f] = 1
+            if normalize(dieta) in f_norm:
+                input_data[f] = 1
+            if normalize(alcance) in f_norm:
+                input_data[f] = 1
+            if normalize(ilhas) in f_norm:
+                input_data[f] = 1
+            if normalize(sexo) in f_norm:
+                input_data[f] = 1
+
+        df_input = pd.DataFrame([input_data])[features]
+
+        pred = model.predict(df_input)[0]
+        proba = model.predict_proba(df_input)[0]
+        conf = round(max(proba) * 100, 2)
+
+        # ================= ABAS =================
+        tab1, tab2, tab3 = st.tabs(["🧠 Resultado", "📊 Análise", "💡 Explicação"])
+
+        # RESULTADO
+        with tab1:
+            st.success(f"Categoria prevista: {pred}")
+            st.metric("Confiança", f"{conf}%")
+
+        # ANALISE (CLARA E DIRETA)
+        with tab2:
+            st.markdown("### 📊 Interpretação dos dados informados")
+
+            st.write(f"• A ave possui dieta **{dieta}**, o que influencia diretamente sua forma de sobrevivência.")
+
+            if dieta.lower() == 'carnívoro':
+                st.write("→ Depende de outras espécies, podendo aumentar vulnerabilidade.")
+            elif dieta.lower() == 'herbívoro':
+                st.write("→ Depende da vegetação disponível.")
+            elif dieta.lower() == 'invertebrados':
+                st.write("→ Sensível a mudanças ambientais.")
+
+            if habitats <= 2:
+                st.write("• Vive em poucos habitats → maior risco.")
+            else:
+                st.write("• Vive em vários habitats → mais adaptável.")
+
+            if esi > 50:
+                st.write("• Alta especialização ecológica → mais sensível a mudanças.")
+            else:
+                st.write("• Baixa especialização → maior capacidade de adaptação.")
+
+            st.write(f"• Região considerada: **{reino}**.")
+
+        # EXPLICAÇÃO DO MODELO
+        with tab3:
+            st.markdown("### 💡 Como o modelo chegou nesse resultado")
+
+            st.write("O modelo analisa padrões encontrados em dados reais de aves.")
+            st.write("Ele compara as características informadas com milhares de registros.")
+            st.write("A partir disso, identifica a categoria mais provável.")
+
+            st.write("A confiança indica o nível de certeza do modelo na previsão.")
+
+        # ================= LINK DASHBOARD =================
+        st.markdown("---")
+        st.markdown("### 📊 Análise completa no Dashboard")
+
+        st.markdown(
+            """
+            Para uma análise mais aprofundada, acesse o dashboard interativo com dados completos:
+            """
         )
 
-        habitats = st.number_input(
-            "Quantidade de habitats",
-            min_value=0, step=1, value=0,
-            help="Número de ambientes diferentes onde a espécie vive"
+        st.markdown(
+            """
+            <a href="https://lookerstudio.google.com/reporting/8d6f3439-8997-43c4-9a0e-164db09650fd/page/p_vuzehhyvxd" target="_blank">
+                <button style="
+                    background-color:#0E6FFF;
+                    color:white;
+                    padding:10px 20px;
+                    border:none;
+                    border-radius:8px;
+                    cursor:pointer;
+                    font-size:16px;
+                ">
+                    🔗 Abrir Dashboard Interativo
+                </button>
+            </a>
+            """,
+            unsafe_allow_html=True
         )
 
-        alimentos = st.number_input(
-            "Tipos de alimentos",
-            min_value=0, step=1, value=0,
-            help="Diversidade alimentar da espécie"
-        )
-
-        input_data["nr_esi_indice_especializacao_ecologica"] = indice
-        input_data["qtd_habitats_principais"] = habitats
-        input_data["qtd_tp_alimentos_principais_consumidos"] = alimentos
-
-        # =========================
-        # CLASSIFICAÇÕES
-        # =========================
-        st.markdown("## 📌 Classificações")
-
-        alcance = st.selectbox(
-            "Alcance restrito",
-            ALCANCE_OPCOES,
-            help="Indica se a espécie vive em uma área geográfica limitada"
-        )
-
-        reproducao = st.selectbox(
-            "Reprodução restrita a ilhas",
-            REPRO_OPCOES,
-            help="Indica se a reprodução ocorre exclusivamente em ilhas"
-        )
-
-        sexo = st.selectbox(
-            "Sexo dependente da incubação",
-            SEXO_OPCOES,
-            help="Indica se o sexo do filhote depende da temperatura de incubação"
-        )
-
-        for opt in ALCANCE_OPCOES:
-            col = f"tp_alcance_restrito_{normalize(opt)}"
-            if col in input_data:
-                input_data[col] = 1 if opt == alcance else 0
-
-        for opt in REPRO_OPCOES:
-            col = f"tp_reproducao_restrita_ilhas_{normalize(opt)}"
-            if col in input_data:
-                input_data[col] = 1 if opt == reproducao else 0
-
-        for opt in SEXO_OPCOES:
-            col = f"tp_sexo_incubacao_{normalize(opt)}"
-            if col in input_data:
-                input_data[col] = 1 if opt == sexo else 0
-
-        # =========================
-        # REGIÃO
-        # =========================
-        st.markdown("## 🌎 Região")
-
-        reino = st.selectbox(
-            "Reino biogeográfico",
-            REINO_OPCOES,
-            help="Região do mundo onde a espécie é encontrada"
-        )
-
-        for opt in REINO_OPCOES:
-            col = f"nm_reino_biogeografico_{normalize(opt)}"
-            if col in input_data:
-                input_data[col] = 1 if opt == reino else 0
-
-        # =========================
-        # DIETA
-        # =========================
-        st.markdown("## 🥩 Dieta")
-
-        dieta = st.selectbox(
-            "Tipo de dieta",
-            DIETA_OPCOES,
-            help="Tipo principal de alimentação da espécie"
-        )
-
-        for opt in DIETA_OPCOES:
-            col = f"tp_dieta_portugues_{normalize(opt)}"
-            if col in input_data:
-                input_data[col] = 1 if opt == dieta else 0
-
-        submitted = st.form_submit_button("🔍 Classificar")
-
-    # =========================
-    # RESULTADO
-    # =========================
-    if submitted and not erro:
-        df = pd.DataFrame([input_data])
-        df = df[features]
-
-        pred = model.predict(df)
-
-        st.success(f"### 🧠 Categoria prevista: **{pred[0]}**")
-
-        try:
-            proba = model.predict_proba(df)
-            conf = round(max(proba[0]) * 100, 2)
-            st.info(f"Confiança: {conf}%")
-        except:
-            pass
-
-
-if __name__ == "__main__":
-    app_main()
+if __name__ == '__main__':
+    main()
